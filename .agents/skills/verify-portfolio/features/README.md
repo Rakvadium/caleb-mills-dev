@@ -4,7 +4,7 @@ This directory is the maintained source for verifying the visitor-facing behavio
 
 ## Baseline preconditions
 
-- Launch the portfolio with `.cursor/skills/verify-portfolio/scripts/control-portfolio launch`.
+- Launch the portfolio with `node .agents/skills/verify-portfolio/scripts/control-portfolio launch`.
 - The default URL is `http://127.0.0.1:3100`. Set `PORTFOLIO_VERIFY_PORT` or pass `--port` to use another port.
 - One checkout can host one `next dev`. A second checkout needs its own port and its own launch.
 - There is no account and no seed data. The page renders its own copy.
@@ -20,7 +20,7 @@ This directory is the maintained source for verifying the visitor-facing behavio
 - Prefer ARIA roles and accessible names over CSS selectors or DOM position.
 - Treat every command as literal. Keep quoted names and flags unchanged.
 - `--nth` is 1-based DOM order. Pass it whenever `click` or `href` reports more than one match.
-- Relative `artifacts/...` paths are written under `.cursor/skills/verify-portfolio/artifacts/`.
+- Relative `artifacts/...` paths are written under `.agents/skills/verify-portfolio/artifacts/`.
 - Do not remove proof artifacts during cleanup.
 
 ## Proof and skip reporting

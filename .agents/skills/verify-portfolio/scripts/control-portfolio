@@ -3,13 +3,17 @@
 
 const { spawn, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
+const WINDOWS = process.platform === "win32";
 const REPO = path.resolve(__dirname, "../../../..");
-const SKILL_DIR = path.join(REPO, ".cursor/skills/verify-portfolio");
+const SKILL_DIR = path.join(REPO, ".agents/skills/verify-portfolio");
 const HOSTNAME = "127.0.0.1";
 const TITLE = "Caleb Mills | Senior Frontend Engineer";
 const HERO_HEADING = "Caleb Mills";
+const HIDDEN_CONSOLE =
+  "require('node:child_process').spawn(process.argv[1], process.argv.slice(2), { stdio: 'inherit', windowsHide: true }).on('exit', (code) => process.exit(code ?? 1));";
 
 function fail(message) {
   const error = new Error(message);
@@ -59,9 +63,7 @@ function evidenceDir() {
 
 function resolveEvidence(inputPath) {
   if (path.isAbsolute(inputPath)) return path.resolve(inputPath);
-  const relative = inputPath.startsWith("artifacts/")
-    ? inputPath.slice("artifacts/".length)
-    : inputPath;
+  const relative = inputPath.replace(/^artifacts[\\/]/, "");
   const resolved = path.resolve(evidenceDir(), relative);
   const root = path.resolve(evidenceDir());
   if (resolved !== root && !resolved.startsWith(root + path.sep)) {
@@ -71,7 +73,7 @@ function resolveEvidence(inputPath) {
 }
 
 function stateDir(port) {
-  return path.join("/tmp/portfolio-verify", String(port));
+  return path.join(os.tmpdir(), "portfolio-verify", String(port));
 }
 
 function statePath(port) {
@@ -82,7 +84,7 @@ function readState(port) {
   const file = statePath(port);
   if (!fs.existsSync(file)) {
     throw fail(
-      `no verification state at ${file}. Run: .cursor/skills/verify-portfolio/scripts/control-portfolio launch`
+      `no verification state at ${file}. Run: node .agents/skills/verify-portfolio/scripts/control-portfolio launch`
     );
   }
   const state = readJson(file);
@@ -100,23 +102,51 @@ function writeState(state) {
   fs.renameSync(tmp, file);
 }
 
-function cmdline(pid) {
-  try {
-    return fs.readFileSync(`/proc/${pid}/cmdline`).toString("utf8").replace(/\0/g, " ").trim();
-  } catch {
-    return "";
+function processes() {
+  if (process.platform === "linux") {
+    const rows = [];
+    for (const entry of fs.readdirSync("/proc")) {
+      if (!/^\d+$/.test(entry)) continue;
+      try {
+        const stat = fs.readFileSync(`/proc/${entry}/stat`, "utf8");
+        const cmd = fs.readFileSync(`/proc/${entry}/cmdline`).toString("utf8").replace(/\0/g, " ").trim();
+        rows.push({ pid: Number(entry), ppid: Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]), cmd });
+      } catch {
+        continue;
+      }
+    }
+    return rows;
   }
+  if (WINDOWS) {
+    const script =
+      "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress";
+    const listed = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (listed.status !== 0) throw fail(`could not list processes: ${listed.stderr}`);
+    return [].concat(JSON.parse(listed.stdout)).map((row) => ({
+      pid: row.ProcessId,
+      ppid: row.ParentProcessId,
+      cmd: row.CommandLine || "",
+    }));
+  }
+  const listed = spawnSync("ps", ["-axww", "-o", "pid=,ppid=,command="], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (listed.status !== 0) throw fail(`could not list processes: ${listed.stderr}`);
+  return listed.stdout
+    .split("\n")
+    .map((line) => line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/))
+    .filter(Boolean)
+    .map((match) => ({ pid: Number(match[1]), ppid: Number(match[2]), cmd: match[3].trim() }));
 }
 
-function procStat(pid) {
-  const raw = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
-  const rest = raw.slice(raw.lastIndexOf(")") + 2).split(" ");
-  return {
-    pid: Number(pid),
-    state: rest[0],
-    ppid: Number(rest[1]),
-    pgid: Number(rest[2]),
-  };
+function cmdline(pid) {
+  const row = processes().find((entry) => entry.pid === Number(pid));
+  return row ? row.cmd : "";
 }
 
 function alive(pid) {
@@ -130,36 +160,33 @@ function alive(pid) {
 }
 
 function isDescendant(pid, ancestor) {
+  const parents = new Map(processes().map((row) => [row.pid, row.ppid]));
   let current = Number(pid);
   const seen = new Set();
-  while (current > 1 && !seen.has(current)) {
+  while (current !== undefined && !seen.has(current)) {
     if (current === Number(ancestor)) return true;
     seen.add(current);
-    try {
-      current = procStat(current).ppid;
-    } catch {
-      return false;
-    }
+    current = parents.get(current);
   }
   return false;
 }
 
-function descendants(root) {
-  const kids = [];
-  for (const entry of fs.readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) continue;
-    const pid = Number(entry);
-    if (pid === Number(root)) continue;
-    try {
-      if (isDescendant(pid, root)) kids.push(pid);
-    } catch {
-      // Process exited while scanning.
-    }
-  }
-  return kids;
-}
-
 function listenerPids(port) {
+  if (WINDOWS) {
+    const listed = spawnSync("netstat", ["-ano"], { encoding: "utf8", windowsHide: true });
+    const pids = new Set();
+    for (const line of (listed.stdout || "").split("\n")) {
+      const parts = line.trim().split(/\s+/);
+      if (parts[0] === "TCP" && parts[1].endsWith(`:${port}`) && parts[2].endsWith(":0")) {
+        pids.add(Number(parts[4]));
+      }
+    }
+    return [...pids];
+  }
+  if (process.platform === "darwin") {
+    const listed = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" });
+    return [...new Set((listed.stdout || "").split("\n").filter(Boolean).map(Number))];
+  }
   const inodes = new Set();
   for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
     let text;
@@ -204,6 +231,13 @@ function listenerPids(port) {
 }
 
 function repoDevServers() {
+  if (process.platform !== "linux") {
+    const repo = WINDOWS ? REPO.toLowerCase() : REPO;
+    return processes().filter((row) => {
+      const cmd = WINDOWS ? row.cmd.toLowerCase() : row.cmd;
+      return cmd.includes(repo) && /next["']?\s+dev\b|start-server/.test(cmd);
+    });
+  }
   const hits = [];
   for (const entry of fs.readdirSync("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
@@ -280,12 +314,29 @@ function optionalNth(flags) {
   return nth;
 }
 
+function onPath(name) {
+  const extensions = WINDOWS ? (process.env.PATHEXT || ".EXE").split(";") : [""];
+  for (const dir of (process.env.PATH || "").split(path.delimiter).filter(Boolean)) {
+    for (const extension of extensions) {
+      const candidate = path.join(dir, name + extension);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
 function chromeBin() {
-  if (process.env.PORTFOLIO_VERIFY_CHROME) return process.env.PORTFOLIO_VERIFY_CHROME;
-  const found = spawnSync("sh", ["-c", "command -v google-chrome"], { encoding: "utf8" });
-  const bin = (found.stdout || "").trim();
+  const configured = process.env.PORTFOLIO_VERIFY_CHROME || process.env.CHROME;
+  if (configured) return configured;
+  const installed = {
+    win32: [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA]
+      .filter(Boolean)
+      .map((dir) => path.join(dir, "Google", "Chrome", "Application", "chrome.exe")),
+    darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+  }[process.platform] || [];
+  const bin = installed.find((file) => fs.existsSync(file)) || onPath("google-chrome") || onPath("chromium");
   if (!bin) {
-    throw fail("google-chrome is not on PATH. Set PORTFOLIO_VERIFY_CHROME to the Chrome binary.");
+    throw fail("Chrome was not found. Set PORTFOLIO_VERIFY_CHROME to the Chrome binary.");
   }
   return bin;
 }
@@ -298,23 +349,16 @@ function tail(file, maxLines) {
 
 function killTree(pid, signal) {
   if (!alive(pid)) return;
-  for (const child of descendants(pid)) {
+  if (WINDOWS) {
+    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    return;
+  }
+  for (const target of [-Number(pid), Number(pid)]) {
     try {
-      process.kill(child, signal);
+      process.kill(target, signal);
     } catch {
-      // Already gone.
+      continue;
     }
-  }
-  try {
-    const stat = procStat(pid);
-    if (stat.pgid === Number(pid)) process.kill(-Number(pid), signal);
-  } catch {
-    // Not a process-group leader.
-  }
-  try {
-    process.kill(Number(pid), signal);
-  } catch {
-    // Already gone.
   }
 }
 
@@ -799,7 +843,7 @@ async function cleanupPort(port) {
   }
   await stopPid(state.chromePid, (pid) => assertOurChrome(pid, state.chromeProfile));
   await stopPid(state.nextPid, (pid) => assertOurNext(pid, port));
-  fs.rmSync(stateDir(port), { recursive: true, force: true });
+  fs.rmSync(stateDir(port), { recursive: true, force: true, maxRetries: 10 });
   console.log("result: cleaned");
   console.log(`state: ${file}`);
   console.log(`evidence: ${evidenceDir()}`);
@@ -827,7 +871,11 @@ async function launch(port) {
   if (debugPort > 65535) throw fail(`debug port ${debugPort} is out of range`);
   const url = `http://${HOSTNAME}:${port}`;
   const fd = fs.openSync(logFile, "a");
-  const child = spawn("npm", ["run", "dev", "--", "--port", String(port), "--hostname", HOSTNAME], {
+  const npmArgs = ["run", "dev", "--", "--port", String(port), "--hostname", HOSTNAME];
+  const [command, args] = WINDOWS
+    ? [process.execPath, ["-e", HIDDEN_CONSOLE, process.env.ComSpec || "cmd.exe", "/d", "/s", "/c", "npm", ...npmArgs]]
+    : ["npm", npmArgs];
+  const child = spawn(command, args, {
     cwd: REPO,
     detached: true,
     stdio: ["ignore", fd, fd],
@@ -841,7 +889,6 @@ async function launch(port) {
     hostname: HOSTNAME,
     url,
     nextPid: child.pid,
-    pgid: child.pid,
     debugPort,
     chromeProfile,
     chromeLog,

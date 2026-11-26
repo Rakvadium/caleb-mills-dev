@@ -7,9 +7,9 @@ description: "Drive the Caleb Mills portfolio Next.js site in Chrome the way a v
 
 The portfolio is a single public Next.js page. A visitor scrolls it, uses the desktop nav or the mobile tab dock, and follows in-page or outbound links. There is no account, no database, and no API to seed. This skill launches that page, drives it from the accessibility tree, and writes proof under the evidence directory.
 
-Run every command from any working directory. The harness locates the repo from its own path. Prefix examples below with the script path:
+Run every command from any working directory. The harness locates the repo from its own path. Prefix examples below with `node` and the script path, which works the same in PowerShell, cmd, and POSIX shells:
 
-`.cursor/skills/verify-portfolio/scripts/control-portfolio`
+`node .agents/skills/verify-portfolio/scripts/control-portfolio`
 
 ## Launch
 
@@ -22,36 +22,38 @@ npm install
 Start a verification instance:
 
 ```bash
-.cursor/skills/verify-portfolio/scripts/control-portfolio launch
+node .agents/skills/verify-portfolio/scripts/control-portfolio launch
 ```
 
-`launch` runs this dev command in the repo root and detaches it:
+`launch` runs this dev command in the repo root with `NEXT_TELEMETRY_DISABLED=1` and `BROWSER=none` set, and detaches it:
 
 ```bash
-NEXT_TELEMETRY_DISABLED=1 BROWSER=none npm run dev -- --port 3100 --hostname 127.0.0.1
+npm run dev -- --port 3100 --hostname 127.0.0.1
 ```
 
-`npm run dev` is `next dev --turbopack`, so the port and hostname are appended after Turbopack. Override the port with `--port` or `PORTFOLIO_VERIFY_PORT`. The default is `3100`. The base URL is `http://127.0.0.1:<port>`. Use `127.0.0.1`, not `localhost`.
+On Windows, where `npm` is `npm.cmd`, it runs through `cmd.exe` in a hidden console, and the recorded pid is a small `node` launcher whose command line carries that npm command. `npm run dev` is `next dev --turbopack`, so the port and hostname are appended after Turbopack. Override the port with `--port` or `PORTFOLIO_VERIFY_PORT`. The default is `3100`. The base URL is `http://127.0.0.1:<port>`. Use `127.0.0.1`, not `localhost`.
 
 Ready means all of the following, and `launch` exits only after the last one:
 
-- The log at `/tmp/portfolio-verify/<port>/next.log` contains `Local:` with that URL and `Ready in`.
+- The log at `<tmp>/portfolio-verify/<port>/next.log` contains `Local:` with that URL and `Ready in`.
 - `GET /` returns 200, the title `Caleb Mills | Senior Frontend Engineer`, and `id="projects"`.
 - Headless Chrome, started by this run with a fresh user-data-dir, has the hero heading `Caleb Mills` visible.
 
+`<tmp>` is Node's `os.tmpdir()`: `%TEMP%` on Windows, `$TMPDIR` on macOS, and usually `/tmp` on Linux. `<tmp>/portfolio-verify/<port>/` is the state directory. It holds `state.json`, the server and Chrome logs, and the Chrome profile. Run every command for one instance from a shell with the same temp directory.
+
 There is nothing to migrate or seed. Copy comes from the app itself. Chrome's profile starts empty on every launch so a later theme preference cannot leak between runs. The README mentions a theme toggle stored in localStorage; the current page has no theme control.
 
-One checkout can run one `next dev`. The harness refuses to launch when any `next dev` or `next-server` process already has this repo as its working directory, or when the chosen port is taken. Two checkouts can run side by side on different ports. Do not drive a dev server this run did not start. `launch` exiting does not stop the server.
+One checkout can run one `next dev`. The harness refuses to launch when the chosen port is taken, or when a `next dev` for this repo is already running. On Linux that means any `next dev` or `next-server` process whose working directory is this repo. On Windows and macOS, where the working directory is not readable, it means any `next dev` or `start-server` process whose command line contains this repo's path. Two checkouts can run side by side on different ports. Do not drive a dev server this run did not start. `launch` exiting does not stop the server.
 
 ## Doctor
 
 ```bash
-.cursor/skills/verify-portfolio/scripts/control-portfolio doctor
+node .agents/skills/verify-portfolio/scripts/control-portfolio doctor
 ```
 
 Run this before the first drive and again after anything surprising. It is read-only. `result: ok` requires:
 
-- the recorded npm pid is still this run's `npm run dev` for this port
+- the recorded launch pid's command line is still this run's `npm run dev` for this port
 - that pid's process tree owns the listening port
 - `GET /` still returns the portfolio title
 - `package.json` version, installed Next version, and git HEAD match the values saved at launch
@@ -74,7 +76,7 @@ The map in `features/README.md` is the source of which journeys exist. Driving o
 
 ## Evidence
 
-Write proof under `.cursor/skills/verify-portfolio/artifacts/`. Override the directory with `PORTFOLIO_VERIFY_EVIDENCE`. Relative `--path` values that start with `artifacts/` are stored inside that directory, so `--path artifacts/projects/view-work.png` becomes `artifacts/projects/view-work.png` and not a nested `artifacts/artifacts` folder. Cleanup never deletes this directory. It is gitignored.
+Write proof under `.agents/skills/verify-portfolio/artifacts/`. Override the directory with `PORTFOLIO_VERIFY_EVIDENCE`. Relative `--path` values that start with `artifacts/` (or `artifacts\` on Windows) are stored inside that directory, so `--path artifacts/projects/view-work.png` becomes `artifacts/projects/view-work.png` and not a nested `artifacts/artifacts` folder. Cleanup never deletes this directory. It is gitignored.
 
 A proof exercises the page in Chrome. Do not set React state, do not treat `app/data/portfolio.ts` as the result, and do not add a test-only route. Capture the command output and the resulting state. Each snapshot starts with `feature`, `entry`, `url`, `title`, and `viewport`. Each screenshot writes a sibling `*.png.meta.txt` with the same fields. The snapshot must include the heading `Caleb Mills` so the proof is tied to this site even when that heading is scrolled off the screenshot.
 
@@ -85,37 +87,33 @@ There is no dry-run mode and nothing on the page sends mail. The Email links are
 ## Cleanup
 
 ```bash
-.cursor/skills/verify-portfolio/scripts/control-portfolio cleanup
+node .agents/skills/verify-portfolio/scripts/control-portfolio cleanup
 ```
 
-Cleanup signals only the npm and Chrome pids recorded for this port, and only after their command lines still match this run. It then deletes `/tmp/portfolio-verify/<port>/`, including the Chrome profile and server log. It does not delete the evidence directory, `.next`, or any process it did not start. Do not use `pkill`, `killall`, or a kill by process name. A missing state file prints `result: no-instance` and exits 0. Run cleanup after a failed launch too. `launch` already does that for a failure it caused itself.
+Cleanup stops only the launch and Chrome pids recorded for this port, and only after their command lines still match this run. On Linux and macOS it sends `SIGTERM` to each pid's process group, then `SIGKILL` if the pid is still alive after 5 seconds. On Windows it runs `taskkill /pid <pid> /T /F`, which ends that pid and every process under it. It then deletes the state directory, including the Chrome profile and server log. It does not delete the evidence directory, `.next`, or any process it did not start. Do not use `pkill`, `killall`, `taskkill /im`, or any kill by process name. A missing state file prints `result: no-instance` and exits 0. Run cleanup after a failed launch too. `launch` already does that for a failure it caused itself.
 
 ## Helpers
 
-The harness is `.cursor/skills/verify-portfolio/scripts/control-portfolio`. It is executable Node.js and uses only Node built-ins plus `google-chrome` on `PATH` (`PORTFOLIO_VERIFY_CHROME` overrides the binary). Invoke it by that path:
+The harness is `.agents/skills/verify-portfolio/scripts/control-portfolio`. It is Node.js that uses only Node built-ins plus Chrome, on Windows, macOS, and Linux. It uses the first Chrome it finds from `PORTFOLIO_VERIFY_CHROME`, then `CHROME`, then the standard install path (`Google\Chrome\Application\chrome.exe` under Program Files, Program Files (x86), or `%LOCALAPPDATA%` on Windows; `/Applications/Google Chrome.app` on macOS), then `google-chrome` or `chromium` on `PATH`. It reads processes and ports through `/proc` on Linux, `ps` and `lsof` on macOS, and PowerShell's `Get-CimInstance` and `netstat` on Windows. Invoke it with `node` and that path:
 
 ```bash
-.cursor/skills/verify-portfolio/scripts/control-portfolio launch
-.cursor/skills/verify-portfolio/scripts/control-portfolio doctor
-.cursor/skills/verify-portfolio/scripts/control-portfolio cleanup
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser open [--hash projects]
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser viewport --width 1280 --height 800
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser click --role link --name "Projects" [--nth 1]
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser wait --role heading --name "Projects" [--timeout 10000]
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser see --role heading --name "Projects" [--nth 1]
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser absent --role link --name "Home"
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser href --role link --name "Open GenHealthAZ live site"
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser location
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser motion
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser canvases
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser wheel --dy 400
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser snapshot --aria --path artifacts/projects/view-work.aria.txt --feature projects --entry view-work
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser screenshot --path artifacts/projects/view-work.png --feature projects --entry view-work
-.cursor/skills/verify-portfolio/scripts/control-portfolio browser close-extra
+node .agents/skills/verify-portfolio/scripts/control-portfolio launch
+node .agents/skills/verify-portfolio/scripts/control-portfolio doctor
+node .agents/skills/verify-portfolio/scripts/control-portfolio cleanup
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser open [--hash projects]
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser viewport --width 1280 --height 800
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser click --role link --name "Projects" [--nth 1]
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser wait --role heading --name "Projects" [--timeout 10000]
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser see --role heading --name "Projects" [--nth 1]
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser absent --role link --name "Home"
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser href --role link --name "Open GenHealthAZ live site"
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser location
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser motion
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser canvases
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser wheel --dy 400
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser snapshot --aria --path artifacts/projects/view-work.aria.txt --feature projects --entry view-work
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser screenshot --path artifacts/projects/view-work.png --feature projects --entry view-work
+node .agents/skills/verify-portfolio/scripts/control-portfolio browser close-extra
 ```
 
 `click` and `href` require `--nth` when the name is ambiguous. `wait` prints `visible: true` only after the node is opaque and inside the viewport. `absent` exits 0 when the count is 0. `wheel` scrolls the page vertically; positive `--dy` goes down. `close-extra` closes Chrome page targets other than the portfolio page recorded at launch.
-
-## Maintenance
-
-When the portfolio changes, run `/maintain-verification-skill` so this map stays aligned with the UI.

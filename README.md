@@ -54,4 +54,4 @@ The default base URL is `http://127.0.0.1:3201`, so start the site there or pass
 
 ## Verification
 
-`.cursor/skills/verify-portfolio/` is an agent skill that drives the site in Chrome the way a visitor does and saves proof. Start with its `SKILL.md`. `features/` holds one verification recipe per part of the page. Launch the site for it with `.cursor/skills/verify-portfolio/scripts/control-portfolio launch`.
+`.agents/skills/verify-portfolio/` is an agent skill that drives the site in Chrome the way a visitor does and saves proof. Start with its `SKILL.md`. `features/` holds one verification recipe per part of the page. Launch the site for it with `node .agents/skills/verify-portfolio/scripts/control-portfolio launch`.
