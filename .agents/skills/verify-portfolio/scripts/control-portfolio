@@ -889,7 +889,6 @@ async function launch(port) {
     hostname: HOSTNAME,
     url,
     nextPid: child.pid,
-    pgid: child.pid,
     debugPort,
     chromeProfile,
     chromeLog,

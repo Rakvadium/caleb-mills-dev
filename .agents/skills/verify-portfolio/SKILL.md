@@ -117,7 +117,3 @@ node .agents/skills/verify-portfolio/scripts/control-portfolio browser close-ext
 ```
 
 `click` and `href` require `--nth` when the name is ambiguous. `wait` prints `visible: true` only after the node is opaque and inside the viewport. `absent` exits 0 when the count is 0. `wheel` scrolls the page vertically; positive `--dy` goes down. `close-extra` closes Chrome page targets other than the portfolio page recorded at launch.
-
-## Maintenance
-
-When the portfolio changes, run `/maintain-verification-skill` so this map stays aligned with the UI.
