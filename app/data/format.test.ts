@@ -40,3 +40,9 @@ test("copy helpers", () => {
   assert.equal(initials("Prince"), "P");
   assert.equal(slugify("KensieMae Senior Full-Stack Engineer"), "kensiemae-senior-full-stack-engineer");
 });
+
+test("slugify keeps the base letters of accented characters", () => {
+  assert.equal(slugify("Café Zoë"), "cafe-zoe");
+  assert.equal(slugify("Crème Brûlée Señor"), "creme-brulee-senor");
+  assert.equal(slugify("Ångström & Çelik"), "angstrom-celik");
+});
