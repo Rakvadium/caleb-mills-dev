@@ -66,7 +66,6 @@ export const StepButtons: Story = {
   },
 };
 
-/** Stepping onto an end hands focus to the opposite step button instead of dropping it. */
 export const StepButtonsKeepFocusAtEnds: Story = {
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
