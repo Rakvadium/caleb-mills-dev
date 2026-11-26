@@ -6,9 +6,9 @@ import path from "node:path";
 import { run } from "node:test";
 
 const PASSED = 0;
-const FAILED = 1;
-const NO_MATCH = 2;
-const SETUP = 3;
+const FAILED = 10;
+const NO_MATCH = 11;
+const SETUP = 12;
 
 const root = path.resolve(import.meta.dirname, "..");
 const INFRASTRUCTURE = [/Failed to fetch dynamically imported module/, /browserType\.launch/, /Browser connection was closed/];
