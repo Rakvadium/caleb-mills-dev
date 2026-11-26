@@ -66,6 +66,28 @@ export const StepButtons: Story = {
   },
 };
 
+/** Stepping onto an end hands focus to the opposite step button instead of dropping it. */
+export const StepButtonsKeepFocusAtEnds: Story = {
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    const newer = c.getByRole("button", { name: /Newer/ });
+    const older = c.getByRole("button", { name: /Older/ });
+    older.focus();
+    for (const status of ["Role 2 of 4, newest first", "Role 3 of 4, newest first", "Role 4 of 4, newest first"]) {
+      await userEvent.keyboard("{Enter}");
+      await waitFor(() => expect(c.getByText(status)).toBeVisible());
+    }
+    await waitFor(() => expect(newer).toHaveFocus());
+    await expect(newer).toBeEnabled();
+    for (const status of ["Role 3 of 4, newest first", "Role 2 of 4, newest first", "Role 1 of 4, newest first"]) {
+      await userEvent.keyboard("{Enter}");
+      await waitFor(() => expect(c.getByText(status)).toBeVisible());
+    }
+    await waitFor(() => expect(older).toHaveFocus());
+    await expect(older).toBeEnabled();
+  },
+};
+
 /** A single role: Newer and Older are both disabled. */
 export const SingleRole: Story = {
   args: { items: [items[0]] },
