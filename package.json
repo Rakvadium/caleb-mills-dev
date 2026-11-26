@@ -13,6 +13,7 @@
     "build-storybook": "storybook build",
     "test-storybook": "vitest run --project=storybook",
     "capture": "node scripts/capture.mjs",
+    "verify": "node scripts/verify.mjs",
     "check": "npm run typecheck && npm run lint && npm test && npm run test-storybook && npm run build-storybook && npm run build"
   },
   "dependencies": {
