@@ -1,5 +1,6 @@
 "use client";
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { flushSync } from "react-dom";
 import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { NonEmpty } from "@/lib/non-empty";
@@ -16,6 +17,8 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 export function RoleExplorer({ items }: { items: NonEmpty<ExplorerItem> }) {
   const [active, setActive] = useState(0);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
+  const newer = useRef<HTMLButtonElement>(null);
+  const older = useRef<HTMLButtonElement>(null);
   const uid = useId();
   const n = items.length;
   const panelId = `${uid}-panel`;
@@ -24,6 +27,12 @@ export function RoleExplorer({ items }: { items: NonEmpty<ExplorerItem> }) {
   const select = (i: number, focus: boolean) => {
     setActive(i);
     if (focus) tabs.current[i]?.focus();
+  };
+
+  const step = (i: number) => {
+    flushSync(() => setActive(i));
+    if (i === 0) older.current?.focus();
+    else if (i === n - 1) newer.current?.focus();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
@@ -96,10 +105,10 @@ export function RoleExplorer({ items }: { items: NonEmpty<ExplorerItem> }) {
                   Role {active + 1} of {n}, newest first
                 </span>
                 <div className="flex gap-2">
-                  <StepButton onClick={() => select(active - 1, false)} disabled={active === 0} className="pl-2.5 pr-3.5">
+                  <StepButton ref={newer} onClick={() => step(active - 1)} disabled={active === 0} className="pl-2.5 pr-3.5">
                     <ChevronLeft aria-hidden className="h-4 w-4" /> Newer
                   </StepButton>
-                  <StepButton onClick={() => select(active + 1, false)} disabled={active === n - 1} className="pl-3.5 pr-2.5">
+                  <StepButton ref={older} onClick={() => step(active + 1)} disabled={active === n - 1} className="pl-3.5 pr-2.5">
                     Older <ChevronRight aria-hidden className="h-4 w-4" />
                   </StepButton>
                 </div>
@@ -113,11 +122,13 @@ export function RoleExplorer({ items }: { items: NonEmpty<ExplorerItem> }) {
 }
 
 function StepButton({
+  ref,
   onClick,
   disabled,
   className,
   children,
 }: {
+  ref: Ref<HTMLButtonElement>;
   onClick: () => void;
   disabled: boolean;
   className: string;
@@ -125,6 +136,7 @@ function StepButton({
 }) {
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onClick}
       disabled={disabled}
